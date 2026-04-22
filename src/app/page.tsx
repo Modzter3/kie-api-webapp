@@ -1,13 +1,35 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { useState } from "react";
 
-const DEFAULT_ENDPOINT = "/api/v1/chat/credit";
+const ASPECT_RATIOS = [
+  "auto",
+  "1:1",
+  "5:4",
+  "9:16",
+  "21:9",
+  "16:9",
+  "4:3",
+  "3:2",
+  "4:5",
+  "3:4",
+  "2:3",
+] as const;
 
 export default function Home() {
-  const [endpoint, setEndpoint] = useState(DEFAULT_ENDPOINT);
-  const [method, setMethod] = useState<"GET" | "POST">("GET");
-  const [payload, setPayload] = useState("{\n  \n}");
+  const [textPrompt, setTextPrompt] = useState("");
+  const [textAspectRatio, setTextAspectRatio] =
+    useState<(typeof ASPECT_RATIOS)[number]>("auto");
+  const [textNsfwChecker, setTextNsfwChecker] = useState(false);
+  const [textCallbackUrl, setTextCallbackUrl] = useState("");
+
+  const [imagePrompt, setImagePrompt] = useState("");
+  const [imageUrlsRaw, setImageUrlsRaw] = useState("");
+  const [imageAspectRatio, setImageAspectRatio] =
+    useState<(typeof ASPECT_RATIOS)[number]>("auto");
+  const [imageNsfwChecker, setImageNsfwChecker] = useState(false);
+  const [imageCallbackUrl, setImageCallbackUrl] = useState("");
+
   const [taskId, setTaskId] = useState("");
   const [output, setOutput] = useState("Run an action to see response JSON here.");
   const [loading, setLoading] = useState(false);
@@ -22,46 +44,100 @@ export default function Home() {
       });
       const data = await response.json();
       setOutput(JSON.stringify(data, null, 2));
+      return data;
     } catch (error) {
-      setOutput(
-        JSON.stringify(
-          {
-            error: "Local request failed.",
-            detail: error instanceof Error ? error.message : String(error),
-          },
-          null,
-          2,
-        ),
-      );
+      const errorPayload = {
+        error: "Local request failed.",
+        detail: error instanceof Error ? error.message : String(error),
+      };
+      setOutput(JSON.stringify(errorPayload, null, 2));
+      return errorPayload;
     } finally {
       setLoading(false);
     }
   }
 
-  function onSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    let parsedPayload: unknown = {};
-    if (method === "POST") {
-      try {
-        parsedPayload = JSON.parse(payload);
-      } catch {
-        setOutput(
-          JSON.stringify(
-            { error: "Payload must be valid JSON for POST requests." },
-            null,
-            2,
-          ),
-        );
-        return;
-      }
+  async function createTextToImageTask() {
+    if (!textPrompt.trim()) {
+      setOutput(JSON.stringify({ error: "Prompt is required." }, null, 2));
+      return;
     }
 
-    void callKieApi({
+    const payload: Record<string, unknown> = {
+      model: "gpt-image-2-text-to-image",
+      input: {
+        prompt: textPrompt.trim(),
+        aspect_ratio: textAspectRatio,
+        nsfw_checker: textNsfwChecker,
+      },
+    };
+
+    if (textCallbackUrl.trim()) {
+      payload.callBackUrl = textCallbackUrl.trim();
+    }
+
+    const result = await callKieApi({
       action: "request",
-      endpoint,
-      method,
-      payload: parsedPayload,
+      endpoint: "/api/v1/jobs/createTask",
+      method: "POST",
+      payload,
+    });
+
+    const newTaskId = (result as { data?: { data?: { taskId?: string } } })?.data?.data
+      ?.taskId;
+    if (newTaskId) {
+      setTaskId(newTaskId);
+    }
+  }
+
+  async function createImageToImageTask() {
+    if (!imagePrompt.trim()) {
+      setOutput(JSON.stringify({ error: "Prompt is required." }, null, 2));
+      return;
+    }
+
+    const inputUrls = imageUrlsRaw
+      .split("\n")
+      .map((value) => value.trim())
+      .filter(Boolean);
+
+    if (inputUrls.length === 0) {
+      setOutput(
+        JSON.stringify(
+          { error: "At least one input URL is required for image-to-image." },
+          null,
+          2,
+        ),
+      );
+      return;
+    }
+
+    if (inputUrls.length > 16) {
+      setOutput(
+        JSON.stringify({ error: "Maximum 16 input URLs are allowed." }, null, 2),
+      );
+      return;
+    }
+
+    const payload: Record<string, unknown> = {
+      model: "gpt-image-2-image-to-image",
+      input: {
+        prompt: imagePrompt.trim(),
+        input_urls: inputUrls,
+        aspect_ratio: imageAspectRatio,
+        nsfw_checker: imageNsfwChecker,
+      },
+    };
+
+    if (imageCallbackUrl.trim()) {
+      payload.callBackUrl = imageCallbackUrl.trim();
+    }
+
+    await callKieApi({
+      action: "request",
+      endpoint: "/api/v1/jobs/createTask",
+      method: "POST",
+      payload,
     });
   }
 
@@ -70,7 +146,8 @@ export default function Home() {
       <section className="space-y-2">
         <h1 className="text-3xl font-semibold tracking-tight">Kie API Personal App</h1>
         <p className="text-sm text-zinc-600 dark:text-zinc-400">
-          Server-side proxy for Kie.ai using <code>KIE_API_KEY</code>. Safe for Vercel.
+          GPT Image-2 task creator with a secure server-side proxy using{" "}
+          <code>KIE_API_KEY</code>.
         </p>
       </section>
 
@@ -102,42 +179,107 @@ export default function Home() {
       </section>
 
       <section className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
-        <h2 className="mb-3 text-lg font-medium">Custom Endpoint Request</h2>
-        <form onSubmit={onSubmit} className="space-y-3">
-          <div className="grid gap-3 md:grid-cols-[120px_1fr]">
+        <h2 className="mb-3 text-lg font-medium">GPT Image-2 Text to Image</h2>
+        <div className="space-y-3">
+          <textarea
+            value={textPrompt}
+            onChange={(event) => setTextPrompt(event.target.value)}
+            placeholder="Prompt (required)"
+            className="h-28 w-full rounded-md border border-zinc-300 p-3 text-sm dark:border-zinc-700"
+          />
+          <div className="grid gap-3 md:grid-cols-2">
             <select
-              value={method}
-              onChange={(event) => setMethod(event.target.value as "GET" | "POST")}
+              value={textAspectRatio}
+              onChange={(event) =>
+                setTextAspectRatio(event.target.value as (typeof ASPECT_RATIOS)[number])
+              }
               className="rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700"
             >
-              <option value="GET">GET</option>
-              <option value="POST">POST</option>
+              {ASPECT_RATIOS.map((ratio) => (
+                <option key={ratio} value={ratio}>
+                  {ratio}
+                </option>
+              ))}
             </select>
             <input
               type="text"
-              value={endpoint}
-              onChange={(event) => setEndpoint(event.target.value)}
-              placeholder="/api/v1/..."
+              value={textCallbackUrl}
+              onChange={(event) => setTextCallbackUrl(event.target.value)}
+              placeholder="Optional callback URL"
               className="rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700"
             />
           </div>
-
-          {method === "POST" && (
-            <textarea
-              value={payload}
-              onChange={(event) => setPayload(event.target.value)}
-              className="h-36 w-full rounded-md border border-zinc-300 p-3 font-mono text-xs dark:border-zinc-700"
+          <label className="inline-flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={textNsfwChecker}
+              onChange={(event) => setTextNsfwChecker(event.target.checked)}
             />
-          )}
-
+            Enable NSFW checker
+          </label>
           <button
-            type="submit"
             className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+            onClick={() => void createTextToImageTask()}
             disabled={loading}
           >
-            Send Request
+            Create Text-to-Image Task
           </button>
-        </form>
+        </div>
+      </section>
+
+      <section className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
+        <h2 className="mb-3 text-lg font-medium">GPT Image-2 Image to Image</h2>
+        <div className="space-y-3">
+          <textarea
+            value={imagePrompt}
+            onChange={(event) => setImagePrompt(event.target.value)}
+            placeholder="Prompt (required)"
+            className="h-24 w-full rounded-md border border-zinc-300 p-3 text-sm dark:border-zinc-700"
+          />
+          <textarea
+            value={imageUrlsRaw}
+            onChange={(event) => setImageUrlsRaw(event.target.value)}
+            placeholder="Input image URLs (required, one URL per line, max 16)"
+            className="h-28 w-full rounded-md border border-zinc-300 p-3 text-sm dark:border-zinc-700"
+          />
+          <div className="grid gap-3 md:grid-cols-2">
+            <select
+              value={imageAspectRatio}
+              onChange={(event) =>
+                setImageAspectRatio(event.target.value as (typeof ASPECT_RATIOS)[number])
+              }
+              className="rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700"
+            >
+              {ASPECT_RATIOS.map((ratio) => (
+                <option key={ratio} value={ratio}>
+                  {ratio}
+                </option>
+              ))}
+            </select>
+            <input
+              type="text"
+              value={imageCallbackUrl}
+              onChange={(event) => setImageCallbackUrl(event.target.value)}
+              placeholder="Optional callback URL"
+              className="rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700"
+            />
+          </div>
+          <label className="inline-flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={imageNsfwChecker}
+              onChange={(event) => setImageNsfwChecker(event.target.checked)}
+            />
+            Enable NSFW checker
+          </label>
+          <button
+            className="rounded-md bg-purple-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+            onClick={() => void createImageToImageTask()}
+            disabled={loading}
+          >
+            Create Image-to-Image Task
+          </button>
+        </div>
       </section>
 
       <section className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">

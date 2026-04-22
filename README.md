@@ -5,9 +5,10 @@ Personal Next.js dashboard for interacting with [Kie.ai docs](https://docs.kie.a
 ## Features
 
 - Keeps your `KIE_API_KEY` on the server (never exposed to browser code)
-- Check account credits quickly
+- GPT Image-2 text-to-image task creation (`gpt-image-2-text-to-image`)
+- GPT Image-2 image-to-image task creation (`gpt-image-2-image-to-image`)
 - Poll async task status by `task_id`
-- Send custom `GET`/`POST` requests to Kie API endpoints
+- Check account credits quickly
 - Deploy-ready for Vercel
 
 ## Local Setup
@@ -55,6 +56,39 @@ Open [http://localhost:3000](http://localhost:3000).
 4. Deploy.
 
 No extra config is required for standard Next.js deployment.
+
+## GPT Image-2 Payloads Used
+
+This app sends task creation requests to:
+
+- `POST /api/v1/jobs/createTask`
+
+Text-to-image payload:
+
+```json
+{
+  "model": "gpt-image-2-text-to-image",
+  "input": {
+    "prompt": "your prompt",
+    "aspect_ratio": "auto",
+    "nsfw_checker": false
+  }
+}
+```
+
+Image-to-image payload:
+
+```json
+{
+  "model": "gpt-image-2-image-to-image",
+  "input": {
+    "prompt": "your prompt",
+    "input_urls": ["https://example.com/image.png"],
+    "aspect_ratio": "auto",
+    "nsfw_checker": false
+  }
+}
+```
 
 ## Notes From Kie Docs
 
