@@ -65,7 +65,7 @@ export async function POST(request: Request) {
         );
       }
 
-      const response = await fetch(`${BASE_URL}/api/v1/record/info?taskId=${encodeURIComponent(body.taskId)}`, {
+      const response = await fetch(`${BASE_URL}/api/v1/jobs/recordInfo?taskId=${encodeURIComponent(body.taskId)}`, {
         method: "GET",
         headers: buildHeaders(apiKey),
         cache: "no-store",
